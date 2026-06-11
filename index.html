@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-50 dark:bg-slate-900">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Depurador y Filtro Rápido de Datos</title>
+    <!-- Tailwind CSS para diseño rápido y moderno -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS para lectura y escritura de Excel / CSV -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- Lucide Icons para iconos limpios -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            200: '#bfdbfe',
+                            300: '#93c5fd',
+                            400: '#60a5fa',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                            800: '#1e40af',
+                            900: '#1e3a8a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Estilos personalizados para scrollbars finas */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: #475569;
+        }
+    </style>
+</head>
+<body class="h-full text-slate-800 dark:text-slate-100 transition-colors duration-200">
+    
+    <div class="min-h-full flex flex-col">
+        <!-- Navegación superior -->
+        <header class="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm sticky top-0 z-40">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="p-2 bg-primary-600 text-white rounded-lg shadow-md">
+                        <i data-lucide="database" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white">CleanData Studio</h1>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">Depuración y filtrado rápido de datos en tu navegador</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <!-- Toggle de Modo Oscuro -->
+                    <button onclick="toggleDarkMode()" class="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition" title="Cambiar Tema">
+                        <i data-lucide="sun" id="sun-icon" class="w-5 h-5 hidden dark:block"></i>
+                        <i data-lucide="moon" id="moon-icon" class="w-5 h-5 dark:hidden"></i>
+                    </button>
+                    <!-- Indicador de privacidad (procesamiento local) -->
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        100% Local y Seguro
+                    </span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Contenedor Principal -->
+        <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col gap-6">
+            
+            <!-- Zona de Carga de Archivos / Drag & Drop -->
+            <div id="drop-zone" class="relative group border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-primary-500 dark:hover:border-primary-400 rounded-2xl bg-white dark:bg-slate-800 p-8 text-center transition-all cursor-pointer shadow-sm">
+                <input type="file" id="file-input" accept=".xlsx, .xls, .csv" class="hidden">
+                <div class="flex flex-col items-center justify-center space-y-4 py-6" id="upload-prompt">
+                    <div class="p-4 bg-primary-50 dark:bg-slate-700 rounded-full text-primary-600 dark:text-primary-400 group-hover:scale-110 transition-transform duration-300">
+                        <i data-lucide="upload-cloud" class="w-10 h-10"></i>
+                    </div>
+                    <div>
+                        <p class="text-lg font-semibold text-slate-700 dark:text-slate-200">
+                            Arrastra y suelta tu base de datos aquí o <span class="text-primary-600 dark:text-primary-400 group-hover:underline">explora archivos</span>
+                        </p>
+                        <p class="text-sm text-slate-400 dark:text-slate-500 mt-1">Soporta formatos .xlsx, .xls y .csv (Tamaño óptimo < 50MB)</p>
+                    </div>
+                </div>
+
+                <!-- Estado de Procesamiento / Cargando -->
+                <div id="upload-loading" class="hidden flex flex-col items-center justify-center space-y-4 py-8">
+                    <div class="relative w-16 h-16">
+                        <div class="absolute inset-0 rounded-full border-4 border-slate-200 dark:border-slate-700"></div>
+                        <div class="absolute inset-0 rounded-full border-4 border-primary-500 border-t-transparent animate-spin"></div>
+                    </div>
+                    <div>
+                        <p class="text-lg font-medium text-slate-700 dark:text-slate-200">Procesando y parseando base de datos...</p>
+                        <p class="text-sm text-slate-400 dark:text-slate-500 mt-1" id="loading-status">Esto se realiza 100% en tu navegador</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel de Control y Filtros (Se muestra solo tras cargar un archivo) -->
+            <div id="workspace" class="hidden flex flex-col lg:flex-row gap-6 items-start">
+                
+                <!-- Barra Lateral Izquierda: Reglas de Filtros y Limpieza -->
+                <aside class="w-full lg:w-80 flex-shrink-0 flex flex-col gap-6">
+                    
+                    <!-- Resumen del Archivo -->
+                    <div class="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                <i data-lucide="file-text" class="w-5 h-5 text-primary-500"></i> Resumen de Datos
+                            </h3>
+                            <button onclick="resetApp()" class="text-xs font-semibold text-rose-600 dark:text-rose-400 hover:underline flex items-center gap-1">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Cambiar
+                            </button>
+                        </div>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-700">
+                                <span class="text-slate-500 dark:text-slate-400">Nombre:</span>
+                                <span id="info-name" class="font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[150px]">-</span>
+                            </div>
+                            <div class="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-700">
+                                <span class="text-slate-500 dark:text-slate-400">Total Filas:</span>
+                                <span id="info-rows" class="font-semibold text-slate-700 dark:text-slate-300">-</span>
+                            </div>
+                            <div class="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-700">
+                                <span class="text-slate-500 dark:text-slate-400">Columnas:</span>
+                                <span id="info-cols" class="font-semibold text-slate-700 dark:text-slate-300">-</span>
+                            </div>
+                            <div class="flex justify-between py-1.5">
+                                <span class="text-slate-500 dark:text-slate-400">Filtradas:</span>
+                                <span id="info-filtered" class="font-bold text-primary-600 dark:text-primary-400">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Limpieza Rápida Avanzada -->
+                    <div class="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm">
+                        <h3 class="font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-4">
+                            <i data-lucide="sparkles" class="w-5 h-5 text-amber-500"></i> Limpieza Inteligente
+                        </h3>
+                        <div class="space-y-3">
+                            <button onclick="cleanDuplicates()" class="w-full flex items-center justify-between px-3 py-2 bg-slate-50 hover:bg-slate-100 dark:bg-slate-700/50 dark:hover:bg-slate-700 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 transition">
+                                <span class="flex items-center gap-2">
+                                    <i data-lucide="copy-minus" class="w-4 h-4 text-amber-500"></i> Eliminar Duplicados
+                                </span>
+                                <span id="dup-badge" class="text-xs bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-full">Calcular</span>
+                            </button>
+                            <button onclick="cleanEmptyRows()" class="w-full flex items-center justify-between px-3 py-2 bg-slate-50 hover:bg-slate-100 dark:bg-slate-700/50 dark:hover:bg-slate-700 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 transition">
+                                <span class="flex items-center gap-2">
+                                    <i data-lucide="eraser" class="w-4 h-4 text-amber-500"></i> Quitar Filas Vacías
+                                </span>
+                                <span class="text-xs bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-full">Automático</span>
+                            </button>
+                            <button onclick="cleanBlankCells()" class="w-full flex items-center justify-between px-3 py-2 bg-slate-50 hover:bg-slate-100 dark:bg-slate-700/50 dark:hover:bg-slate-700 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 transition" title="Reemplaza celdas vacías por N/A">
+                                <span class="flex items-center gap-2">
+                                    <i data-lucide="edit-3" class="w-4 h-4 text-amber-500"></i> Normalizar Nulos a (N/A)
+                                </span>
+                                <span class="text-xs bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-full">Texto</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Panel de Configuración de Filtros de Columnas -->
+                    <div class="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm flex-grow">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                <i data-lucide="filter" class="w-5 h-5 text-primary-500"></i> Filtros por Columna
+                            </h3>
+                            <button onclick="clearAllFilters()" class="text-xs text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1 font-medium">
+                                <i data-lucide="refresh-cw" class="w-3 h-3"></i> Restablecer
+                            </button>
+                        </div>
+                        
+                        <!-- Selector de Columna a Filtrar -->
+                        <div class="space-y-4">
+                            <div>
+                                <label for="column-selector" class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Selecciona Columna</label>
+                                <select id="column-selector" onchange="onFilterColumnChange()" class="w-full bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition"></select>
+                            </div>
+
+                            <!-- Opciones Dinámicas según Tipo de Columna Detectado -->
+                            <div class="border-t border-slate-100 dark:border-slate-700 pt-4 space-y-4">
+                                <div id="filter-type-indicator" class="flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                                    <span>Tipo:</span>
+                                    <span id="col-type-badge" class="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-600 text-slate-600 dark:text-slate-300">Texto</span>
+                                </div>
+
+                                <!-- Filtro de Búsqueda de Texto -->
+                                <div id="text-filter-container" class="space-y-2">
+                                    <label class="block text-xs font-medium text-slate-600 dark:text-slate-300">Búsqueda de Texto</label>
+                                    <div class="relative">
+                                        <input type="text" id="text-search" placeholder="Contiene..." oninput="applyActiveFilters()" class="w-full bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg pl-8 pr-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none transition">
+                                        <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-2.5 top-3"></i>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <select id="text-match-type" onchange="applyActiveFilters()" class="w-full bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-primary-500 outline-none">
+                                            <option value="contains">Contiene</option>
+                                            <option value="not_contains">No contiene</option>
+                                            <option value="equals">Exactamente igual</option>
+                                            <option value="starts">Empieza con</option>
+                                            <option value="ends">Termina con</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- Filtro de Rango Numérico -->
+                                <div id="numeric-filter-container" class="space-y-2 hidden">
+                                    <label class="block text-xs font-medium text-slate-600 dark:text-slate-300">Rango Numérico</label>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <span class="text-[10px] text-slate-400">Min</span>
+                                            <input type="number" id="num-min" placeholder="Min" oninput="applyActiveFilters()" class="w-full bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-primary-500 outline-none">
+                                        </div>
+                                        <div>
+                                            <span class="text-[10px] text-slate-400">Max</span>
+                                            <input type="number" id="num-max" placeholder="Max" oninput="applyActiveFilters()" class="w-full bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-primary-500 outline-none">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Filtro de Valores Únicos (Checkbox list) -->
+                                <div id="unique-values-container" class="space-y-2">
+                                    <div class="flex justify-between items-center">
+                                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-300">Valores Únicos</label>
+                                        <div class="space-x-1">
+                                            <button onclick="toggleAllUniqueValues(true)" class="text-[10px] text-primary-500 hover:underline">Todos</button>
+                                            <span class="text-[10px] text-slate-300">|</span>
+                                            <button onclick="toggleAllUniqueValues(false)" class="text-[10px] text-primary-500 hover:underline">Ninguno</button>
+                                        </div>
+                                    </div>
+                                    <div id="unique-list" class="max-h-40 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-2 space-y-1.5 bg-slate-50 dark:bg-slate-900">
+                                        <!-- Se llena dinámicamente -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Panel Central Derecho: Datos y Exportación -->
+                <section class="flex-grow w-full flex flex-col gap-6 overflow-hidden">
+                    
+                    <!-- Barra de Acciones superiores de la tabla -->
+                    <div class="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+                        
+                        <!-- Filtros activos Badges -->
+                        <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                            <span class="text-xs text-slate-400 font-medium">Filtros Activos:</span>
+                            <div id="active-filters-badges" class="flex flex-wrap gap-1.5">
+                                <span class="text-xs text-slate-400 italic">Ninguno</span>
+                            </div>
+                        </div>
+
+                        <!-- Botones de Exportación -->
+                        <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
+                            <button onclick="exportData('csv')" class="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-semibold px-4 py-2 rounded-lg text-sm transition">
+                                <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-500"></i> Exportar CSV
+                            </button>
+                            <button onclick="exportData('xlsx')" class="flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold px-4 py-2 rounded-lg text-sm shadow-md shadow-primary-500/10 transition">
+                                <i data-lucide="download" class="w-4 h-4"></i> Exportar Excel (XLSX)
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Contenedor Principal de la Tabla -->
+                    <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col overflow-hidden max-w-full">
+                        
+                        <!-- Scroll horizontal para la tabla -->
+                        <div class="overflow-x-auto w-full max-h-[500px]">
+                            <table class="min-w-full divide-y divide-slate-200 dark:divide-slate-700 text-left border-collapse" id="data-table">
+                                <thead class="bg-slate-50 dark:bg-slate-900 sticky top-0 z-10">
+                                    <tr id="table-headers">
+                                        <!-- Columnas generadas dinámicamente -->
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700 text-xs sm:text-sm text-slate-600 dark:text-slate-300" id="table-body">
+                                    <!-- Filas generadas dinámicamente con paginación -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Paginación Inferior -->
+                        <div class="bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 px-4 py-3.5 flex items-center justify-between">
+                            <div class="flex items-center gap-2 text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                                <span>Mostrar</span>
+                                <select id="page-size" onchange="changePageSize()" class="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded px-1.5 py-1 text-xs focus:ring-1 focus:ring-primary-500">
+                                    <option value="10">10</option>
+                                    <option value="25" selected>25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                </select>
+                                <span>filas por página</span>
+                            </div>
+
+                            <div class="flex items-center gap-4">
+                                <span class="text-xs sm:text-sm text-slate-500 dark:text-slate-400" id="page-info">
+                                    Página 1 de 1
+                                </span>
+                                <div class="flex items-center space-x-1">
+                                    <button onclick="goToPage(1)" class="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition" title="Primera página">
+                                        <i data-lucide="chevrons-left" class="w-4 h-4"></i>
+                                    </button>
+                                    <button onclick="changePage(-1)" class="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition" title="Página anterior">
+                                        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                                    </button>
+                                    <button onclick="changePage(1)" class="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition" title="Siguiente página">
+                                        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                                    </button>
+                                    <button onclick="goToPage(totalPages)" class="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition" title="Última página">
+                                        <i data-lucide="chevrons-right" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            
+            <!-- Modal de Mensajes Personalizado -->
+            <div id="custom-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+                <div class="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-md w-full border border-slate-200 dark:border-slate-700 shadow-xl transform scale-95 transition-transform duration-300">
+                    <div class="flex items-start gap-4">
+                        <div id="modal-icon-container" class="p-3 rounded-full flex-shrink-0">
+                            <!-- Icono dinámico -->
+                        </div>
+                        <div class="flex-grow">
+                            <h3 id="modal-title" class="text-lg font-bold text-slate-900 dark:text-white">Título</h3>
+                            <p id="modal-desc" class="text-sm text-slate-500 dark:text-slate-400 mt-2">Descripción del mensaje.</p>
+                        </div>
+                    </div>
+                    <div class="mt-6 flex justify-end">
+                        <button onclick="closeModal()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-semibold rounded-lg text-sm transition">
+                            Entendido
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Footer Informativo -->
+        <footer class="bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 py-6 mt-auto">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4 text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="shield-check" class="w-4 h-4 text-emerald-500"></i>
+                    <span>Tus datos están protegidos. El procesamiento se ejecuta en la memoria local de tu navegador.</span>
+                </div>
+                <div>
+                    <span>CleanData Studio &copy; 2026. Hecho con ❤️</span>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Scripts de Control del Aplicativo -->
+    <script>
+        // --- Estado Global de la App ---
+        let originalData = [];      // Datos importados puros
+        let workingData = [];       // Datos de trabajo tras limpiezas básicas
+        let filteredData = [];      // Datos filtrados según las reglas activas
+        let columnHeaders = [];     // Cabeceras identificadas
+        let columnTypes = {};       // Tipos detectados { "Columna": "string"|"number" }
+        let uniqueValues = {};      // Valores únicos precalculados por columna
+        
+        // Estado de Paginación
+        let currentPage = 1;
+        let pageSize = 25;
+        let totalPages = 1;
+        
+        // Estado de Filtros Activos por Columna
+        // Estructura: { "Nombre Columna": { type: "text"|"number", search: "", match: "contains", min: null, max: null, selectedValues: Set() } }
+        let activeFilters = {};
+        let currentFilterColumn = ""; // Columna seleccionada en el menú izquierdo
+        let originalFileName = "base_datos_depurada";
+
+        // Inicialización de Iconos de Lucide
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            setupDragAndDrop();
+            initTheme();
+        });
+
+        // --- Gestión de Modo Claro / Oscuro ---
+        function initTheme() {
+            if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        }
+
+        function toggleDarkMode() {
+            if (document.documentElement.classList.contains('dark')) {
+                document.documentElement.classList.remove('dark');
+                localStorage.theme = 'light';
+            } else {
+                document.documentElement.classList.add('dark');
+                localStorage.theme = 'dark';
+            }
+        }
+
+        // --- Drag & Drop e Importación de Archivo ---
+        function setupDragAndDrop() {
+            const dropZone = document.getElementById('drop-zone');
+            const fileInput = document.getElementById('file-input');
+
+            dropZone.addEventListener('click', () => fileInput.click());
+
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-primary-500', 'bg-primary-50/20', 'dark:bg-slate-700/50');
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('border-primary-500', 'bg-primary-50/20', 'dark:bg-slate-700/50');
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-primary-500', 'bg-primary-50/20', 'dark:bg-slate-700/50');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    processUploadedFile(files[0]);
+                }
+            });
+
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    processUploadedFile(e.target.files[0]);
+                }
+            });
+        }
+
+        // Procesamiento del Archivo (Excel o CSV)
+        function processUploadedFile(file) {
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (!['xlsx', 'xls', 'csv'].includes(ext)) {
+                showModal('Formato No Soportado', 'Por favor selecciona un archivo con extensión .xlsx, .xls o .csv', 'error');
+                return;
+            }
+
+            originalFileName = file.name.replace(/\.[^/.]+$/, ""); // Quitar extensión
+            toggleLoading(true);
+
+            const reader = new FileReader();
+            
+            if (ext === 'csv') {
+                reader.readAsText(file, 'UTF-8');
+            } else {
+                reader.readAsArrayBuffer(file);
+            }
+
+            reader.onload = function(e) {
+                try {
+                    const data = e.target.result;
+                    let workbook;
+                    
+                    if (ext === 'csv') {
+                        workbook = XLSX.read(data, { type: 'string' });
+                    } else {
+                        workbook = XLSX.read(data, { type: 'array' });
+                    }
+
+                    // Seleccionamos la primera hoja
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    
+                    // Parseamos a JSON con headers raw
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+
+                    if (jsonData.length === 0) {
+                        throw new Error("El archivo seleccionado está vacío.");
+                    }
+
+                    // Guardar datos en el estado global
+                    originalData = JSON.parse(JSON.stringify(jsonData)); // Deep copy
+                    workingData = JSON.parse(JSON.stringify(jsonData));
+                    
+                    // Identificar Columnas
+                    columnHeaders = Object.keys(originalData[0]);
+                    
+                    // Analizar tipos de datos por columna
+                    detectColumnTypes();
+                    
+                    // Precalcular valores únicos para filtros rápidos
+                    precalculateUniqueValues();
+
+                    // Limpiar filtros activos antiguos
+                    activeFilters = {};
+                    columnHeaders.forEach(col => {
+                        activeFilters[col] = {
+                            type: columnTypes[col],
+                            search: "",
+                            match: "contains",
+                            min: "",
+                            max: "",
+                            selectedValues: new Set(uniqueValues[col])
+                        };
+                    });
+
+                    // UI Updates
+                    updateSummaryInfo(file.name);
+                    populateColumnSelector();
+                    
+                    // Inicializar visualización
+                    applyActiveFilters();
+                    calculateDuplicatesCount();
+
+                    // Mostrar workspace, ocultar loader
+                    document.getElementById('drop-zone').classList.add('hidden');
+                    document.getElementById('workspace').classList.remove('hidden');
+                    toggleLoading(false);
+
+                    showModal('¡Carga Exitosa!', `Se han cargado correctamente ${originalData.length} filas y ${columnHeaders.length} columnas.`, 'success');
+
+                } catch (error) {
+                    console.error(error);
+                    toggleLoading(false);
+                    showModal('Error de Lectura', 'Hubo un error al procesar el archivo. Asegúrate de que el archivo no esté corrupto y tenga formato válido.', 'error');
+                }
+            };
+
+            reader.onerror = function() {
+                toggleLoading(false);
+                showModal('Error', 'No se pudo leer el archivo.', 'error');
+            };
+        }
+
+        function toggleLoading(show) {
+            const prompt = document.getElementById('upload-prompt');
+            const loading = document.getElementById('upload-loading');
+            if (show) {
+                prompt.classList.add('hidden');
+                loading.classList.remove('hidden');
+            } else {
+                prompt.classList.remove('hidden');
+                loading.classList.add('hidden');
+            }
+        }
+
+        // --- Detección y Análisis de Columnas ---
+        function detectColumnTypes() {
+            columnTypes = {};
+            columnHeaders.forEach(header => {
+                let numericCount = 0;
+                let emptyCount = 0;
+                const sampleSize = Math.min(workingData.length, 100); // Evaluar muestra para rendimiento
+
+                for (let i = 0; i < sampleSize; i++) {
+                    const val = workingData[i][header];
+                    if (val === undefined || val === null || val === '') {
+                        emptyCount++;
+                        continue;
+                    }
+                    if (!isNaN(Number(val)) && val !== '') {
+                        numericCount++;
+                    }
+                }
+
+                const validSamples = sampleSize - emptyCount;
+                if (validSamples > 0 && (numericCount / validSamples) > 0.8) {
+                    columnTypes[header] = 'number';
+                } else {
+                    columnTypes[header] = 'text';
+                }
+            });
+        }
+
+        function precalculateUniqueValues() {
+            uniqueValues = {};
+            columnHeaders.forEach(header => {
+                const uniqueSet = new Set();
+                workingData.forEach(row => {
+                    let val = row[header];
+                    if (val === undefined || val === null || val === '') {
+                        val = "(Vacío)";
+                    }
+                    uniqueSet.add(String(val).trim());
+                });
+                uniqueValues[header] = Array.from(uniqueSet).sort((a, b) => {
+                    // Orden inteligente numérico o alfabético
+                    if (!isNaN(Number(a)) && !isNaN(Number(b))) {
+                        return Number(a) - Number(b);
+                    }
+                    return String(a).localeCompare(String(b));
+                });
+            });
+        }
+
+        function calculateDuplicatesCount() {
+            const dupBadge = document.getElementById('dup-badge');
+            const seen = new Set();
+            let duplicates = 0;
+
+            workingData.forEach(row => {
+                const serialized = JSON.stringify(row);
+                if (seen.has(serialized)) {
+                    duplicates++;
+                } else {
+                    seen.add(serialized);
+                }
+            });
+
+            dupBadge.textContent = duplicates;
+            if (duplicates > 0) {
+                dupBadge.className = "text-xs bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 px-2 py-0.5 rounded-full font-bold animate-pulse";
+            } else {
+                dupBadge.className = "text-xs bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-full";
+            }
+        }
+
+        // --- Actualización de Componentes de UI ---
+        function updateSummaryInfo(fileName) {
+            document.getElementById('info-name').textContent = fileName;
+            document.getElementById('info-name').title = fileName;
+            document.getElementById('info-rows').textContent = workingData.length.toLocaleString();
+            document.getElementById('info-cols').textContent = columnHeaders.length.toLocaleString();
+        }
+
+        function populateColumnSelector() {
+            const selector = document.getElementById('column-selector');
+            selector.innerHTML = '';
+            
+            columnHeaders.forEach((header, index) => {
+                const opt = document.createElement('option');
+                opt.value = header;
+                opt.textContent = `${header} (${columnTypes[header] === 'number' ? 'Número' : 'Texto'})`;
+                if (index === 0) {
+                    currentFilterColumn = header;
+                }
+                selector.appendChild(opt);
+            });
+
+            onFilterColumnChange();
+        }
+
+        // Se ejecuta cuando el usuario selecciona otra columna en el panel izquierdo
+        function onFilterColumnChange() {
+            currentFilterColumn = document.getElementById('column-selector').value;
+            if (!currentFilterColumn) return;
+
+            const type = columnTypes[currentFilterColumn];
+            const typeBadge = document.getElementById('col-type-badge');
+            
+            typeBadge.textContent = type === 'number' ? 'Numérico' : 'Texto';
+            
+            // Configurar visibilidad de filtros
+            const textFilter = document.getElementById('text-filter-container');
+            const numericFilter = document.getElementById('numeric-filter-container');
+            
+            if (type === 'number') {
+                textFilter.classList.add('hidden');
+                numericFilter.classList.remove('hidden');
+            } else {
+                textFilter.classList.remove('hidden');
+                numericFilter.classList.add('hidden');
+            }
+
+            // Cargar estado de filtro actual en el formulario
+            const filterState = activeFilters[currentFilterColumn];
+            
+            // Cargar texto
+            document.getElementById('text-search').value = filterState.search;
+            document.getElementById('text-match-type').value = filterState.match;
+            
+            // Cargar numérico
+            document.getElementById('num-min').value = filterState.min;
+            document.getElementById('num-max').value = filterState.max;
+
+            // Cargar Lista de Valores Únicos
+            renderUniqueValuesList();
+        }
+
+        function renderUniqueValuesList() {
+            const container = document.getElementById('unique-list');
+            container.innerHTML = '';
+
+            const list = uniqueValues[currentFilterColumn] || [];
+            const filterState = activeFilters[currentFilterColumn];
+
+            list.forEach(val => {
+                const label = document.createElement('label');
+                label.className = "flex items-center space-x-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 p-1 rounded cursor-pointer transition";
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = "rounded text-primary-600 focus:ring-primary-500 w-3.5 h-3.5";
+                checkbox.checked = filterState.selectedValues.has(val);
+                checkbox.onchange = (e) => {
+                    if (e.target.checked) {
+                        filterState.selectedValues.add(val);
+                    } else {
+                        filterState.selectedValues.delete(val);
+                    }
+                    applyActiveFilters();
+                };
+
+                const span = document.createElement('span');
+                span.className = "truncate";
+                span.textContent = val;
+                span.title = val;
+
+                label.appendChild(checkbox);
+                label.appendChild(span);
+                container.appendChild(label);
+            });
+        }
+
+        function toggleAllUniqueValues(select) {
+            const filterState = activeFilters[currentFilterColumn];
+            const list = uniqueValues[currentFilterColumn] || [];
+            
+            if (select) {
+                list.forEach(v => filterState.selectedValues.add(v));
+            } else {
+                filterState.selectedValues.clear();
+            }
+
+            renderUniqueValuesList();
+            applyActiveFilters();
+        }
+
+        // --- Motor de Filtrado y Limpieza ---
+
+        // Aplica todas las reglas de filtrado activas del estado global
+        function applyActiveFilters() {
+            // Actualizar filtros basados en las entradas activas de la columna seleccionada
+            const filterState = activeFilters[currentFilterColumn];
+            if (filterState) {
+                if (filterState.type === 'text') {
+                    filterState.search = document.getElementById('text-search').value.toLowerCase().trim();
+                    filterState.match = document.getElementById('text-match-type').value;
+                } else if (filterState.type === 'number') {
+                    filterState.min = document.getElementById('num-min').value;
+                    filterState.max = document.getElementById('num-max').value;
+                }
+            }
+
+            // Filtrar workingData aplicando todas las reglas de todas las columnas simultáneamente
+            filteredData = workingData.filter(row => {
+                for (let col of columnHeaders) {
+                    const rule = activeFilters[col];
+                    if (!rule) continue;
+
+                    let cellValRaw = row[col];
+                    let cellValStr = cellValRaw !== undefined && cellValRaw !== null ? String(cellValRaw).trim() : "";
+                    let cellValNorm = cellValStr === "" ? "(Vacío)" : cellValStr;
+
+                    // 1. Filtrado por lista de Valores Únicos seleccionados
+                    if (!rule.selectedValues.has(cellValNorm)) {
+                        return false;
+                    }
+
+                    // 2. Filtro de Texto (si aplica)
+                    if (rule.type === 'text' && rule.search !== "") {
+                        const cellLower = cellValStr.toLowerCase();
+                        const searchLower = rule.search;
+
+                        switch (rule.match) {
+                            case 'contains':
+                                if (!cellLower.includes(searchLower)) return false;
+                                break;
+                            case 'not_contains':
+                                if (cellLower.includes(searchLower)) return false;
+                                break;
+                            case 'equals':
+                                if (cellLower !== searchLower) return false;
+                                break;
+                            case 'starts':
+                                if (!cellLower.startsWith(searchLower)) return false;
+                                break;
+                            case 'ends':
+                                if (!cellLower.endsWith(searchLower)) return false;
+                                break;
+                        }
+                    }
+
+                    // 3. Filtro Numérico (si aplica)
+                    if (rule.type === 'number') {
+                        const cellNum = parseFloat(cellValStr);
+                        
+                        if (rule.min !== "" && rule.min !== null) {
+                            const minVal = parseFloat(rule.min);
+                            if (isNaN(cellNum) || cellNum < minVal) return false;
+                        }
+                        if (rule.max !== "" && rule.max !== null) {
+                            const maxVal = parseFloat(rule.max);
+                            if (isNaN(cellNum) || cellNum > maxVal) return false;
+                        }
+                    }
+                }
+                return true;
+            });
+
+            // Actualizar visualizaciones de badges de filtros y renderizar tabla
+            currentPage = 1;
+            renderActiveFilterBadges();
+            updatePagination();
+            renderTable();
+        }
+
+        function renderActiveFilterBadges() {
+            const container = document.getElementById('active-filters-badges');
+            container.innerHTML = '';
+            let activeCount = 0;
+
+            columnHeaders.forEach(col => {
+                const rule = activeFilters[col];
+                if (!rule) return;
+
+                let isFiltered = false;
+                let badgeText = "";
+
+                if (rule.type === 'text' && rule.search !== "") {
+                    isFiltered = true;
+                    badgeText = `${col}: "${rule.search}"`;
+                } else if (rule.type === 'number' && (rule.min !== "" || rule.max !== "")) {
+                    isFiltered = true;
+                    badgeText = `${col}: [${rule.min || '*'} a ${rule.max || '*'}]`;
+                }
+
+                // Si no están seleccionados todos los valores únicos posibles, también se considera filtrado
+                const totalUnique = uniqueValues[col] ? uniqueValues[col].length : 0;
+                if (rule.selectedValues.size < totalUnique) {
+                    isFiltered = true;
+                    if (!badgeText) {
+                        badgeText = `${col}: (${rule.selectedValues.size}/${totalUnique})`;
+                    }
+                }
+
+                if (isFiltered) {
+                    activeCount++;
+                    const badge = document.createElement('span');
+                    badge.className = "inline-flex items-center gap-1 px-2 py-1 rounded bg-primary-100 text-primary-800 dark:bg-primary-950 dark:text-primary-300 text-xs font-semibold";
+                    badge.innerHTML = `
+                        ${badgeText}
+                        <button onclick="clearSingleFilter('${col}')" class="hover:text-rose-600 transition">
+                            <i data-lucide="x" class="w-3 h-3"></i>
+                        </button>
+                    `;
+                    container.appendChild(badge);
+                }
+            });
+
+            if (activeCount === 0) {
+                container.innerHTML = '<span class="text-xs text-slate-400 italic">Ninguno</span>';
+            }
+            lucide.createIcons();
+        }
+
+        function clearSingleFilter(col) {
+            const rule = activeFilters[col];
+            if (!rule) return;
+
+            rule.search = "";
+            rule.min = "";
+            rule.max = "";
+            rule.selectedValues = new Set(uniqueValues[col]);
+
+            // Si es la columna que estamos viendo, resetear UI de filtros izquierdos
+            if (col === currentFilterColumn) {
+                document.getElementById('text-search').value = "";
+                document.getElementById('num-min').value = "";
+                document.getElementById('num-max').value = "";
+                renderUniqueValuesList();
+            }
+
+            applyActiveFilters();
+        }
+
+        function clearAllFilters() {
+            columnHeaders.forEach(col => {
+                const rule = activeFilters[col];
+                if (rule) {
+                    rule.search = "";
+                    rule.min = "";
+                    rule.max = "";
+                    rule.selectedValues = new Set(uniqueValues[col]);
+                }
+            });
+
+            // Reset UI actual
+            document.getElementById('text-search').value = "";
+            document.getElementById('num-min').value = "";
+            document.getElementById('num-max').value = "";
+            renderUniqueValuesList();
+
+            applyActiveFilters();
+            showModal('Filtros Limpios', 'Se han restablecido todos los filtros de la tabla.', 'success');
+        }
+
+        // --- Funciones de Limpieza Directa ---
+
+        // Eliminar filas duplicadas idénticas en la base de datos de trabajo
+        function cleanDuplicates() {
+            const initialSize = workingData.length;
+            const seen = new Set();
+            const deduplicated = [];
+
+            workingData.forEach(row => {
+                const serialized = JSON.stringify(row);
+                if (!seen.has(serialized)) {
+                    seen.add(serialized);
+                    deduplicated.push(row);
+                }
+            });
+
+            const deleted = initialSize - deduplicated.length;
+
+            if (deleted === 0) {
+                showModal('Limpieza', 'No se encontraron filas duplicadas en la base de datos de trabajo.', 'success');
+                return;
+            }
+
+            workingData = deduplicated;
+            
+            // Recalcular únicos y reconstruir conjuntos de filtros activos para no perder selección
+            precalculateUniqueValues();
+            columnHeaders.forEach(col => {
+                // Preservar estado anterior ajustado a los nuevos valores únicos disponibles
+                const oldSelected = activeFilters[col].selectedValues;
+                activeFilters[col].selectedValues = new Set(
+                    uniqueValues[col].filter(val => oldSelected.has(val))
+                );
+                // Si la selección anterior estaba vacía o completa, resetear a los nuevos
+                if (activeFilters[col].selectedValues.size === 0) {
+                    activeFilters[col].selectedValues = new Set(uniqueValues[col]);
+                }
+            });
+
+            calculateDuplicatesCount();
+            applyActiveFilters();
+            updateSummaryInfo(originalFileName);
+
+            showModal('Duplicados Eliminados', `Se han removido con éxito ${deleted} filas duplicadas de la base de datos.`, 'success');
+        }
+
+        // Elimina filas donde todas o casi todas las celdas clave están vacías
+        function cleanEmptyRows() {
+            const initialSize = workingData.length;
+            
+            // Se define que una fila está vacía si más del 90% de sus celdas no contienen caracteres válidos
+            const threshold = 0.9;
+
+            const cleaned = workingData.filter(row => {
+                let emptyCells = 0;
+                columnHeaders.forEach(col => {
+                    const val = row[col];
+                    if (val === undefined || val === null || String(val).trim() === '') {
+                        emptyCells++;
+                    }
+                });
+                const ratio = emptyCells / columnHeaders.length;
+                return ratio < threshold;
+            });
+
+            const deleted = initialSize - cleaned.length;
+
+            if (deleted === 0) {
+                showModal('Limpieza', 'No se encontraron filas completamente vacías.', 'success');
+                return;
+            }
+
+            workingData = cleaned;
+            precalculateUniqueValues();
+            
+            // Ajustar filtros
+            columnHeaders.forEach(col => {
+                activeFilters[col].selectedValues = new Set(uniqueValues[col]);
+            });
+
+            calculateDuplicatesCount();
+            applyActiveFilters();
+            updateSummaryInfo(originalFileName);
+
+            showModal('Filas Limpiadas', `Se han removido ${deleted} filas vacías de la base de datos.`, 'success');
+        }
+
+        // Normaliza nulos reemplazando campos vacíos con "(N/A)" para evitar rotura de fórmulas
+        function cleanBlankCells() {
+            let replacedCount = 0;
+            
+            workingData = workingData.map(row => {
+                const newRow = { ...row };
+                columnHeaders.forEach(col => {
+                    const val = newRow[col];
+                    if (val === undefined || val === null || String(val).trim() === '') {
+                        newRow[col] = "N/A";
+                        replacedCount++;
+                    }
+                });
+                return newRow;
+            });
+
+            if (replacedCount === 0) {
+                showModal('Limpieza', 'No se encontraron celdas vacías.', 'success');
+                return;
+            }
+
+            precalculateUniqueValues();
+            // Ajustar filtros
+            columnHeaders.forEach(col => {
+                activeFilters[col].selectedValues = new Set(uniqueValues[col]);
+            });
+
+            calculateDuplicatesCount();
+            applyActiveFilters();
+            
+            showModal('Normalización Completada', `Se han normalizado y transformado ${replacedCount} celdas que se encontraban vacías a "N/A".`, 'success');
+        }
+
+        // --- Paginación y Renderizado de Tabla ---
+        function updatePagination() {
+            totalPages = Math.ceil(filteredData.length / pageSize) || 1;
+            if (currentPage > totalPages) currentPage = totalPages;
+            
+            document.getElementById('page-info').textContent = `Página ${currentPage} de ${totalPages}`;
+            document.getElementById('info-filtered').textContent = `${filteredData.length.toLocaleString()} / ${workingData.length.toLocaleString()} filas`;
+        }
+
+        function changePage(direction) {
+            const targetPage = currentPage + direction;
+            if (targetPage >= 1 && targetPage <= totalPages) {
+                currentPage = targetPage;
+                updatePagination();
+                renderTable();
+            }
+        }
+
+        function goToPage(page) {
+            if (page >= 1 && page <= totalPages) {
+                currentPage = page;
+                updatePagination();
+                renderTable();
+            }
+        }
+
+        function changePageSize() {
+            pageSize = parseInt(document.getElementById('page-size').value);
+            currentPage = 1;
+            updatePagination();
+            renderTable();
+        }
+
+        function renderTable() {
+            const headerRow = document.getElementById('table-headers');
+            const tbody = document.getElementById('table-body');
+
+            // Limpiar tabla
+            headerRow.innerHTML = '';
+            tbody.innerHTML = '';
+
+            if (columnHeaders.length === 0) return;
+
+            // Render Cabeceras
+            columnHeaders.forEach(col => {
+                const th = document.createElement('th');
+                th.className = "px-6 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-700 whitespace-nowrap";
+                th.innerHTML = `
+                    <div class="flex items-center gap-1.5 cursor-pointer" onclick="selectAndFocusColumn('${col}')">
+                        <span>${col}</span>
+                        <i data-lucide="arrow-down-z-a" class="w-3 h-3 text-slate-400"></i>
+                    </div>
+                `;
+                headerRow.appendChild(th);
+            });
+
+            // Obtener registros paginados
+            const start = (currentPage - 1) * pageSize;
+            const end = start + pageSize;
+            const pageRecords = filteredData.slice(start, end);
+
+            if (pageRecords.length === 0) {
+                const tr = document.createElement('tr');
+                const td = document.createElement('td');
+                td.colSpan = columnHeaders.length;
+                td.className = "px-6 py-10 text-center text-slate-400 dark:text-slate-500 italic";
+                td.textContent = "Ningún registro coincide con los filtros aplicados.";
+                tr.appendChild(td);
+                tbody.appendChild(tr);
+                return;
+            }
+
+            // Render Filas
+            pageRecords.forEach((row, rowIndex) => {
+                const tr = document.createElement('tr');
+                tr.className = rowIndex % 2 === 0 ? "bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors" : "bg-slate-50/50 dark:bg-slate-900/10 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors";
+
+                columnHeaders.forEach(col => {
+                    const td = document.createElement('td');
+                    td.className = "px-6 py-2.5 border-b border-slate-100 dark:border-slate-700/50 whitespace-nowrap text-xs max-w-xs truncate";
+                    const val = row[col];
+                    td.textContent = val !== undefined && val !== null ? String(val) : "";
+                    td.title = val !== undefined && val !== null ? String(val) : "";
+                    tr.appendChild(td);
+                });
+
+                tbody.appendChild(tr);
+            });
+
+            lucide.createIcons();
+        }
+
+        // Al presionar en una cabecera, se enfoca la columna correspondiente en la sección de filtros rápidos
+        function selectAndFocusColumn(colName) {
+            document.getElementById('column-selector').value = colName;
+            onFilterColumnChange();
+            // Scroll animado rápido al panel de control izquierdo en móvil
+            if (window.innerWidth < 1024) {
+                document.getElementById('column-selector').scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
+        // --- Exportación de Datos de Vuelta ---
+        function exportData(format) {
+            if (filteredData.length === 0) {
+                showModal('Exportación Vacía', 'No hay datos filtrados para exportar. Modifica los filtros actuales.', 'error');
+                return;
+            }
+
+            try {
+                // Crear nueva hoja de cálculo a partir de los datos filtrados actualmente
+                const worksheet = XLSX.utils.json_to_sheet(filteredData);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, "Datos_Depurados");
+
+                const dateStr = new Date().toISOString().slice(0,10);
+                const exportName = `${originalFileName}_clean_${dateStr}`;
+
+                if (format === 'xlsx') {
+                    XLSX.writeFile(workbook, `${exportName}.xlsx`);
+                } else if (format === 'csv') {
+                    XLSX.writeFile(workbook, `${exportName}.csv`, { bookType: 'csv' });
+                }
+
+                showModal('¡Exportación Exitosa!', `Se han guardado correctamente ${filteredData.length} registros en tu dispositivo.`, 'success');
+
+            } catch (err) {
+                console.error(err);
+                showModal('Error al Exportar', 'Sucedió un imprevisto generando el archivo de exportación.', 'error');
+            }
+        }
+
+        // --- Controladores del Ciclo de Vida del Workspace ---
+        function resetApp() {
+            originalData = [];
+            workingData = [];
+            filteredData = [];
+            columnHeaders = [];
+            activeFilters = {};
+            
+            document.getElementById('file-input').value = "";
+            document.getElementById('workspace').classList.add('hidden');
+            document.getElementById('drop-zone').classList.remove('hidden');
+            
+            // Limpiar componentes de carga
+            toggleLoading(false);
+        }
+
+        // --- Componentes Reutilizables (Modal Personalizado) ---
+        function showModal(title, text, type = 'info') {
+            const modal = document.getElementById('custom-modal');
+            const iconContainer = document.getElementById('modal-icon-container');
+            const mTitle = document.getElementById('modal-title');
+            const mDesc = document.getElementById('modal-desc');
+
+            mTitle.textContent = title;
+            mDesc.textContent = text;
+
+            // Configurar icono y color según tipo
+            iconContainer.innerHTML = '';
+            if (type === 'success') {
+                iconContainer.className = 'p-3 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300';
+                iconContainer.innerHTML = '<i data-lucide="check-circle-2" class="w-6 h-6"></i>';
+            } else if (type === 'error') {
+                iconContainer.className = 'p-3 rounded-full bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300';
+                iconContainer.innerHTML = '<i data-lucide="alert-triangle" class="w-6 h-6"></i>';
+            } else {
+                iconContainer.className = 'p-3 rounded-full bg-primary-100 text-primary-800 dark:bg-primary-950 dark:text-primary-300';
+                iconContainer.innerHTML = '<i data-lucide="info" class="w-6 h-6"></i>';
+            }
+
+            modal.classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function closeModal() {
+            document.getElementById('custom-modal').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
